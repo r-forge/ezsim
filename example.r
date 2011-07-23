@@ -14,6 +14,8 @@ library(ezsim)
 
 ez_ols<-ezsim(
     m             = 100,
+    core          = 1,
+    auto_save     = 0,
     display_name  = c(beta_hat='hat(beta)',es='sigma[e]^2',xs='sigma[x]^2'),
     parameter_def = createParDef(scalars=list(xs=1,beta=1,n=seq(20,100,20),es=c(1,10))),
     dgp           = function(){

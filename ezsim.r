@@ -11,6 +11,7 @@
 #' @param core numeric. How many core will be used in the simulation. The parallel computing is implmented by foreach and doSNOW.
 #' @param display_name Display name for the name of parameter and estimator. see \code{\link{plotmath}} for details.
 #' @param packages character vector of packages that the estiamtor depend on. Ignored when core=1. See \code{\link{foreach}} for details.
+#' @param auto_save Number of auto save during the simulation.
 #' @return An ezsim object.
 #' @author TszKin Julian Chan \email{ctszkin@@gmail.com}
 #' @seealso \code{\link{createParDef}} \code{\link{setOthers}},\code{\link{setScalars}} \code{\link{summary.ezsim}}
@@ -123,7 +124,7 @@
 #' }
 
 ezsim <-
-function(m,estimator,dgp,parameter_def,true_value=NA,run=TRUE,core=1,display_name=NULL,packages=NULL){
+function(m,estimator,dgp,parameter_def,true_value=NA,run=TRUE,core=1,display_name=NULL,packages=NULL,auto_save=0){
     out<-list(m=m,estimator=estimator,true_value=true_value,dgp=dgp,parameter_def=parameter_def,display_name=display_name,packages=packages)
     class(out)<-"ezsim"
     i<-NULL
@@ -151,7 +152,7 @@ function(m,estimator,dgp,parameter_def,true_value=NA,run=TRUE,core=1,display_nam
 
     ## Run simulation
     if (run)
-        run(out,core=core)
+        run(out,core=core,auto_save=auto_save)
         
     return(out)
 }
@@ -163,6 +164,8 @@ function(m,estimator,dgp,parameter_def,true_value=NA,run=TRUE,core=1,display_nam
 #' @method run ezsim
 #' @param x An ezsim object
 #' @param core Number of core to be used in parallel computing. Default is 1.
+#' @param auto_save Number of auto save during the simulation.
+#' @param create_worker If TRUE, create worker for parallelization automatically.
 #' @param \dots unused
 #' @author TszKin Julian Chan \email{ctszkin@@gmail.com}
 #' @S3method run ezsim
@@ -182,60 +185,99 @@ function(m,estimator,dgp,parameter_def,true_value=NA,run=TRUE,core=1,display_nam
 #' }
 
 run.ezsim <-
-function(x,core=1,...){
+function(x,core=1,auto_save=0,create_worker=TRUE,...){
     xx<-x
     counter<-1
     i<-NULL
   	scalar_parameters<-names(x$parameter_def$scalars)
-	
-	
-    time_used<-system.time({
-    if (core==1){
-        pb<-txtProgressBar(min = 0, max = length(generate(xx$parameter_def))*xx$m, style = 3)
-        xx$sim<-
-        foreach (i = generate(x$parameter_def),.combine=rbind) %do% {
-            temp<-as.data.frame(
-            foreach (j = 1:x$m,.combine=rbind) %do% {
-                setTxtProgressBar(pb,counter<-counter+1 )    
-                x$estimator(run(x$dgp,i))
-            })
-            add2DataFrame(temp,unlist(i[scalar_parameters]))
+	  
+    # Autosave     
+    if (auto_save > 0 ){
+        # compute each interval
+        m<-rep(trunc(x$m/(auto_save+1)),auto_save+1)
+        m[auto_save+1]<-m[auto_save+1]+x$m%%(auto_save+1)
+               
+        time_stamp <- toString(Sys.time())
+        # run the simulation one by one
+        if (core>1 & create_worker){
+            cl<-makeCluster(core) 
+            registerDoSNOW(cl)
         }
-        close(pb)
+        ezsim_list<-
+        foreach (i = m,j=1:length(m)) %do% {
+            obj_name<-paste('ezsim_temp_',j,sep='')
+            file_name<-paste(time_stamp,'_part_',j,'.rData',sep='')
+            
+            temp<-x
+            temp$m<-i
+            cat('Part ',j,'. Number of replication:',i,'\n',sep='')
+            run(temp,core=core,create_worker=FALSE)
+            
+
+            assign(obj_name,temp)
+            cat('Saving part ',j,' to ',file_name,'\n\n',sep='')
+            save(file=file_name,list=obj_name)
+            temp
+        }
+        if (core>1 & create_worker)
+            stopCluster(cl)
+        
+        # merge them back and return
+        xx<-foreach ( i=ezsim_list , .combine=merge.ezsim) %do% i
+        eval.parent(substitute(x<-xx))
+        return()
     } else {
-        numb_loop<-length(generate(x$parameter_def))
-        pb<-txtProgressBar(min = 0, max = numb_loop, style = 3)
-        cl<-makeCluster(core) 
-        registerDoSNOW(cl)
-        if (is.null(x$packages))
-            packages<-'ezsim'
-        else    
-            packages<-c('ezsim',x$packages)
-        xx$sim<-
-        foreach (i = generate(x$parameter_def),.combine=rbind) %do% {
-            setTxtProgressBar(pb,counter<-counter+1 )
-            temp<-as.data.frame(
-            foreach (j = 1:x$m,.combine=rbind,.packages=packages) %dopar% {
-                x$estimator(ezsim:::run.function(x$dgp,i))
-            })
-            add2DataFrame(temp,unlist(i[scalar_parameters]))
-        }    
-        close(pb)
-        stopCluster(cl)
-    }
-    })
+        time_used<-system.time({
+            if (core==1){
+                pb<-txtProgressBar(min = 0, max = length(generate(xx$parameter_def))*xx$m, style = 3)
+                xx$sim<-
+                foreach (i = generate(x$parameter_def),.combine=rbind) %do% {
+                    temp<-as.data.frame(
+                    foreach (j = 1:x$m,.combine=rbind) %do% {
+                        setTxtProgressBar(pb,counter<-counter+1 )    
+                        x$estimator(run(x$dgp,i))
+                    })
+                    add2DataFrame(temp,unlist(i[scalar_parameters]))
+                }
+                close(pb)
+            } else {
+                numb_loop<-length(generate(x$parameter_def))
+                pb<-txtProgressBar(min = 0, max = numb_loop, style = 3)
+                if (create_worker){
+                    cl<-makeCluster(core) 
+                    registerDoSNOW(cl)
+                }
+
+                if (is.null(x$packages))
+                    packages<-'ezsim'
+                else    
+                    packages<-c('ezsim',x$packages)
+                xx$sim<-
+                foreach (i = generate(x$parameter_def),.combine=rbind) %do% {
+                    setTxtProgressBar(pb,counter<-counter+1 )
+                    temp<-as.data.frame(
+                    foreach (j = 1:x$m,.combine=rbind,.packages=packages) %dopar% {
+                        x$estimator(ezsim:::run.function(x$dgp,i))
+                    })
+                    add2DataFrame(temp,unlist(i[scalar_parameters]))
+                }    
+                close(pb)
+                if (create_worker)
+                    stopCluster(cl)
+            }
+        })
+        
+        ## melt down the estimator
+        id_vars<-scalar_parameters
+        xx$sim<-melt(xx$sim,id.vars=id_vars,variable_name='estimator')
     
-    ## melt down the estimator
-    id_vars<-scalar_parameters
-    xx$sim<-melt(xx$sim,id.vars=id_vars,variable_name='estimator')
-
-    ## merge the true value
-    xx$sim<-merge(xx$sim,xx$TV_table,by=c(id_vars,'estimator'),suffixes = c("_of_estimator","_of_TV"),all.x=TRUE)
-
-    print(time_used)
-    cat("DONE!\n")
-    rownames(xx$sim)<-NULL
-    eval.parent(substitute(x<-xx))
+        ## merge the true value
+        xx$sim<-merge(xx$sim,xx$TV_table,by=c(id_vars,'estimator'),suffixes = c("_of_estimator","_of_TV"),all.x=TRUE)
+    
+        print(time_used)
+        rownames(xx$sim)<-NULL
+        eval.parent(substitute(x<-xx))
+    }
 }
 
 #' For each set of parameters, the simulation is ran once to obtain the value of estimator and true value to make sure everything in ezsim is properly defined. The test results will be shown in the console. The test will be ran automatically when you create an ezsim object.
@@ -1603,6 +1645,20 @@ function(display_name){
     }
 }
 
+#' Merge two ezsim objects. Either \code{m} or \code{parameter_def} of two ezsim objects must be the same. If \code{parameter_def} are the same, the merging is regarded as increasing the number of simulation \code{m}. If the \code{parameter_def} are different and \code{m} are the same, the merging is regarded as extending the \code{parameter_def}.
+#' @name merge.parameterDef
+#' @aliases merge.parameterDef
+#' @title Merge two parameterDef objects
+#' @method merge parameterDef
+#' @param x A parameterDef to merge with 
+#' @param y A parameterDef to merge with
+#' @author TszKin Julian Chan \email{ctszkin@@gmail.com}
+#' @S3method run ezsim
+#' @seealso \code{\link{createParDef}}, \code{\link{createParDef}}
+#' @examples
+#' \dontrun{
+    #some code here        
+#' }
 merge.ezsim<-function(x,y){
 	if (class(y)!='ezsim')
 		stop('y must be an ezsim object')
@@ -1640,7 +1696,7 @@ merge.ezsim<-function(x,y){
 		
 		estimator_name<-setdiff(names(out$TV_table),c('estimator','value'))
 		
-    estimator_name<-estimator_name[length(estimator_name):1]
+        estimator_name<-estimator_name[length(estimator_name):1]
       
 		TV_table_order<-
 		eval(parse(text=paste('with(out$TV_table, order(','estimator,', paste(estimator_name,collapse=','),'))',sep='')))
@@ -1651,6 +1707,20 @@ merge.ezsim<-function(x,y){
 	}
 }
 
+#' Merge two parameterDef objects. 'others' of two parameterDef objects must be the same. 'scalars' of two parameterDef objects must have same name and the value must not overlap.
+#' @name merge.parameterDef
+#' @aliases merge.parameterDef
+#' @title Merge two parameterDef objects
+#' @method merge parameterDef
+#' @param x A parameterDef to merge with 
+#' @param y A parameterDef to merge with
+#' @author TszKin Julian Chan \email{ctszkin@@gmail.com}
+#' @S3method run ezsim
+#' @seealso \code{\link{createParDef}}, \code{\link{createParDef}}
+#' @examples
+#' \dontrun{
+    #some code here        
+#' }
 merge.parameterDef<-function(x,y){
 	if (class(y)!='parameterDef')
 		stop('y must be an parameterDef object')
