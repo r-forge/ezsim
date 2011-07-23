@@ -1,0 +1,12 @@
+Package: ezsim
+Type: Package
+Title: Simulation tools
+Version: 0.5.1
+Date: 2011-07-22
+Author: TszKin Julian Chan <ctszkin@gmail.com>
+Maintainer: TszKin Julian Chan <ctszkin@gmail.com>
+Description: ezsim provides a handy way to run simulation and examine its result
+License: GPL>=2
+LazyLoad: yes
+Depends: foreach, doSNOW, plyr, reshape, ggplot2
+BugReports: TszKin Julian Chan <ctszkin@gmail.com>
