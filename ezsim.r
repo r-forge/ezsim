@@ -124,31 +124,30 @@
 
 ezsim <-
 function(m,estimator,dgp,parameter_def,true_value=NA,run=TRUE,core=1,display_name=NULL,packages=NULL){
-    out<-list(m=m,estimator=estimator,true_value=true_value,dgp=dgp,parameter_def=parameter_def,core=core,display_name=display_name,packages=packages)
+    out<-list(m=m,estimator=estimator,true_value=true_value,dgp=dgp,parameter_def=parameter_def,display_name=display_name,packages=packages)
     class(out)<-"ezsim"
     i<-NULL
     
     ## Generate parameter
-    out$scalar_parameters<- names(parameter_def$scalars)
-    out$parameter_list<-generate(parameter_def)
+    scalar_parameters<- names(parameter_def$scalars)
     
     ## Test
     name_of_estimator<-test(out)
     
     ## Generate true value table
     out$TV_table<-
-    foreach (i = out$parameter_list,.combine=rbind,.final=data.frame) %do% {
+    foreach (i = generate(parameter_def),.combine=rbind,.final=data.frame) %do% {
         true_value<-
             if(class(out$true_value)!='function')
                 rep(NA,length(name_of_estimator))
             else
                 run(out$true_value,i)
-        scalars_par<-unlist(i[out$scalar_parameters])
+        scalars_par<-unlist(i[scalar_parameters])
         names(true_value)<-name_of_estimator
         t(c(scalars_par,true_value))
     }
     rownames(out$TV_table)<-NULL
-    out$TV_table<-melt(out$TV_table,id.vars=unlist(out$scalar_parameters),variable_name="estimator")
+    out$TV_table<-melt(out$TV_table,id.vars=unlist(scalar_parameters),variable_name="estimator")
 
     ## Run simulation
     if (run)
@@ -163,7 +162,7 @@ function(m,estimator,dgp,parameter_def,true_value=NA,run=TRUE,core=1,display_nam
 #' @title Run the Simulation
 #' @method run ezsim
 #' @param x An ezsim object
-#' @param core Number of core to be used in parallel computing. if missing, the value in ezsim object will be used.
+#' @param core Number of core to be used in parallel computing. Default is 1.
 #' @param \dots unused
 #' @author TszKin Julian Chan \email{ctszkin@@gmail.com}
 #' @S3method run ezsim
@@ -183,28 +182,28 @@ function(m,estimator,dgp,parameter_def,true_value=NA,run=TRUE,core=1,display_nam
 #' }
 
 run.ezsim <-
-function(x,core,...){
+function(x,core=1,...){
     xx<-x
-    if (missing(core))
-        core <- xx$core
     counter<-1
     i<-NULL
-
+  	scalar_parameters<-names(x$parameter_def$scalars)
+	
+	
     time_used<-system.time({
     if (core==1){
-        pb<-txtProgressBar(min = 0, max = length(xx$parameter_list)*xx$m, style = 3)
+        pb<-txtProgressBar(min = 0, max = length(generate(xx$parameter_def))*xx$m, style = 3)
         xx$sim<-
-        foreach (i = x$parameter_list,.combine=rbind) %do% {
+        foreach (i = generate(x$parameter_def),.combine=rbind) %do% {
             temp<-as.data.frame(
             foreach (j = 1:x$m,.combine=rbind) %do% {
                 setTxtProgressBar(pb,counter<-counter+1 )    
                 x$estimator(run(x$dgp,i))
             })
-            add2DataFrame(temp,unlist(i[x$scalar_parameters]))
+            add2DataFrame(temp,unlist(i[scalar_parameters]))
         }
         close(pb)
     } else {
-        numb_loop<-length(x$parameter_list)
+        numb_loop<-length(generate(x$parameter_def))
         pb<-txtProgressBar(min = 0, max = numb_loop, style = 3)
         cl<-makeCluster(core) 
         registerDoSNOW(cl)
@@ -213,13 +212,13 @@ function(x,core,...){
         else    
             packages<-c('ezsim',x$packages)
         xx$sim<-
-        foreach (i = x$parameter_list,.combine=rbind) %do% {
+        foreach (i = generate(x$parameter_def),.combine=rbind) %do% {
             setTxtProgressBar(pb,counter<-counter+1 )
             temp<-as.data.frame(
             foreach (j = 1:x$m,.combine=rbind,.packages=packages) %dopar% {
                 x$estimator(ezsim:::run.function(x$dgp,i))
             })
-            add2DataFrame(temp,unlist(i[x$scalar_parameters]))
+            add2DataFrame(temp,unlist(i[scalar_parameters]))
         }    
         close(pb)
         stopCluster(cl)
@@ -227,7 +226,7 @@ function(x,core,...){
     })
     
     ## melt down the estimator
-    id_vars<-xx$scalar_parameters
+    id_vars<-scalar_parameters
     xx$sim<-melt(xx$sim,id.vars=id_vars,variable_name='estimator')
 
     ## merge the true value
@@ -272,7 +271,7 @@ function(x,return_name=TRUE,print_result=FALSE,...){
     name_of_estimator<-''
     i<-NULL
     temp<-
-    foreach (i = x$parameter_list,.combine=rbind) %do% {
+    foreach (i = generate(x$parameter_def),.combine=rbind) %do% {
         my_estimator<-x$estimator(run(x$dgp,i))
         name_of_estimator<-names(my_estimator)
         my_TV<-
@@ -283,7 +282,7 @@ function(x,return_name=TRUE,print_result=FALSE,...){
         if (length(my_estimator)!=length(my_TV))
             stop('length of estimator and true value are not the same!')
         names(my_TV)<-paste('TV_of_',names(my_estimator),sep='')
-        c(unlist(i[x$scalar_parameters]),my_estimator,my_TV)
+        c(unlist(i[names(x$parameter_def$scalars)]),my_estimator,my_TV)
     }
     cat("Done!\n")
 
@@ -1602,4 +1601,73 @@ function(display_name){
         v<-paste(variable, value, sep = "==")
         lapply(as.character(v), function(x) parse(text = x))
     }
+}
+
+merge.ezsim<-function(x,y){
+	if (class(y)!='ezsim')
+		stop('y must be an ezsim object')
+		
+	check_cond<-
+	foreach (i = c('estimator','true_value','dgp','display_name','packages'),.combine=c,.final=all) %do% {
+		digest(x[[i]])==digest(y[[i]])
+	}
+	if (!check_cond)
+		stop('Two ezsim objects are not the same')
+
+	# Same parameter_def, adding the number of simulation. 
+	if (digest(x$parameter_def)==digest(y$parameter_def)){
+		if (digest(x$TV_table)!=digest(y$TV_table))
+			stop('True value tables are not the same')
+	
+		out<-x
+		out$m<-x$m+y$m
+		out$sim<-rbind(x$sim,y$sim)
+		return(out)
+	}
+	# Same m, different parameter
+	if ( (x$m == y$m) & (digest(x$parameter_def)!=digest(y$parameter_def)) ) {
+	
+		out<-x
+		# check whether there's error when merging x$parameter_def and y$parameter_def	
+		out$parameter_def<-
+		tryCatch( merge( x$parameter_def,y$parameter_def) , error = function(e) stop(e) )
+				
+		# merge sim
+		out$sim<-rbind(x$sim,y$sim)
+		
+		# merge TV_table (regenerate it )
+		out$TV_table<-rbind(x$TV_table,y$TV_table)
+		
+		estimator_name<-setdiff(names(out$TV_table),c('estimator','value'))
+		
+    estimator_name<-estimator_name[length(estimator_name):1]
+      
+		TV_table_order<-
+		eval(parse(text=paste('with(out$TV_table, order(','estimator,', paste(estimator_name,collapse=','),'))',sep='')))
+
+		out$TV_table<-out$TV_table[TV_table_order,]
+				
+		return(out)		
+	}
+}
+
+merge.parameterDef<-function(x,y){
+	if (class(y)!='parameterDef')
+		stop('y must be an parameterDef object')
+		
+	if ( digest(x$others) != digest(y$others) )
+		stop(' \'others\' of two parameterDef must be the same.')
+		
+	if ( !setequal(names(x),names(y)) )
+		stop('name of scalars are not the same')
+		
+	xy_data_frame <- rbind(expand.grid(x$scalars) , expand.grid(y$scalars))
+	if (!identical(unique(xy_data_frame),xy_data_frame))
+		stop('Scalars are overlaped in two parameterDef objects')
+		
+	new_scalars<-list()
+	for ( i in names(x$scalars) )  
+		new_scalars[[i]] <- sort(unique(c(x$scalars[[i]],y$scalars[[i]])))
+		
+	createParDef(scalars=new_scalars, others=x$others)
 }

@@ -1,11 +1,12 @@
 rm(list=ls(all=TRUE))
-source("C:\\Users\\julian\\Dropbox\\R project\\ezsim\\ezsim.r")
+source("F:\\Dropbox\\R project\\ezsim_svn\\ezsim.r")
 
-# library(doSNOW)
-# library(foreach)
-# library(plyr)
-# library(reshape)
-# library(ggplot2)
+library(doSNOW)
+library(foreach)
+library(plyr)
+library(reshape)
+library(ggplot2)
+library(digest)
 library(ezsim)
 
 
@@ -656,6 +657,50 @@ getScalarsName(summary(ezsim_basic))
  mean(replicate(n,jb.test(rt(100,3)))<0.05)
 
 # label_both_parsed_recode
+
+
+#################
+# example for merge
+
+ez_ols1<-ezsim(
+    m             = 100,
+    display_name  = c(beta_hat='hat(beta)',es='sigma[e]^2',xs='sigma[x]^2'),
+    parameter_def = createParDef(scalars=list(xs=1,beta=1,n=seq(20,100,20),es=c(1,10))),
+    dgp           = function(){
+                        x<-rnorm(n,0,xs)
+                        e<-rnorm(n,0,es)
+                        y<-beta * x + e
+                        data.frame(y,x)
+                    },
+    estimator     = function(d){
+                        r<-summary(lm(y~x-1,data=d))
+                        out<-c(r$coef[,1],(r$coef[,1]-1)/r$coef[,2] )
+                        names(out)<-c('beta_hat','t-test')
+                        out
+                    },
+    true_value    = function() c(beta ,(beta -1)/(es/sqrt(n)/xs)) 
+)
+
+
+ez_ols2<-ezsim(
+    m             = 100,
+    display_name  = c(beta_hat='hat(beta)',es='sigma[e]^2',xs='sigma[x]^2'),
+    parameter_def = createParDef(scalars=list(xs=1,beta=2,n=seq(20,100,20),es=c(1,10))),
+    dgp           = function(){
+                        x<-rnorm(n,0,xs)
+                        e<-rnorm(n,0,es)
+                        y<-beta * x + e
+                        data.frame(y,x)
+                    },
+    estimator     = function(d){
+                        r<-summary(lm(y~x-1,data=d))
+                        out<-c(r$coef[,1],(r$coef[,1]-1)/r$coef[,2] )
+                        names(out)<-c('beta_hat','t-test')
+                        out
+                    },
+    true_value    = function() c(beta ,(beta -1)/(es/sqrt(n)/xs)) 
+)
+
 
 
 
