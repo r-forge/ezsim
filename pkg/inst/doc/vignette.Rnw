@@ -17,7 +17,7 @@ We would like to replicate the simulation for 200 times. $n$ takes value from 20
 <<keep.source=TRUE,results=hide>>=
 library(ezsim)
 ezsim_basic<-ezsim(
-    m             = 200,
+    m             = 50,
     run           = TRUE,
     core          = 1,
     display_name  = c(mean_hat="hat(mu)",sd_mean_hat="hat(sigma[hat(mu)])"),

@@ -11,8 +11,8 @@ del ezsim\ezsim-package.Rd /s
 del ezsim\Read-and-delete-me /s
 
 R CMD check ezsim
-REM R CMD build ezsim
-REM R CMD build ezsim --binary
+R CMD build ezsim
+R CMD build ezsim --binary
 
 REM RCMD INSTALL ezsim_0.5.0.zip
 
