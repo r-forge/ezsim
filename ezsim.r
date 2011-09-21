@@ -1646,15 +1646,15 @@ function(display_name){
 }
 
 #' Merge two ezsim objects. Either \code{m} or \code{parameter_def} of two ezsim objects must be the same. If \code{parameter_def} are the same, the merging is regarded as increasing the number of simulation \code{m}. If the \code{parameter_def} are different and \code{m} are the same, the merging is regarded as extending the \code{parameter_def}.
-#' @name merge.parameterDef
-#' @aliases merge.parameterDef
-#' @title Merge two parameterDef objects
-#' @method merge parameterDef
-#' @param x A parameterDef to merge with 
-#' @param y A parameterDef to merge with
+#' @name merge.ezsim
+#' @aliases merge.ezsim
+#' @title Merge two ezsim objects
+#' @method merge ezsim
+#' @param x A ezsim to merge with 
+#' @param y A ezsim to merge with
 #' @author TszKin Julian Chan \email{ctszkin@@gmail.com}
 #' @S3method run ezsim
-#' @seealso \code{\link{createParDef}}, \code{\link{createParDef}}
+#' @seealso \code{\link{ezsim}}
 #' @examples
 #' \dontrun{
     #some code here        
